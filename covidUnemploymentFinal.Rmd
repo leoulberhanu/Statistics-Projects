@@ -1,0 +1,230 @@
+---
+title: "Covide Effect on Unemployment"
+author: "Leoul Berhanu, Frederick Huang, Rhys Kittleson, Sakshum Kulshrestha, Hoa Minh Le" 
+output:
+  html_document:
+    number_sections: yes
+    toc: yes  
+  pdf_document:
+    toc: yes
+---
+Introduction: Our project used the statistical tools we learned this semester to see how unemployment rates were affected by COVID 19. Our first experiment was conducted via a linear regression on unemployment rates. Our second experiment was a Hypothesis test (T-test) that compared unemployment rates in those with High School Degrees Versus Bachelor's Degrees.
+
+```{r, echo = FALSE}
+
+suppressMessages(library(dplyr))
+suppressMessages(library(tidyverse))
+project_root <- "/Users/leoulberhanu/Downloads/"
+unemployment_fn <- paste(project_root, "unemployment_data.csv", sep="/")
+unemployment_data <- read.csv(unemployment_fn, header = TRUE)
+```
+
+
+```{r, echo = FALSE}
+unemployment_rates <- unemployment_data %>% filter(series_id == "LNS14000000      ")  %>%
+ filter(year %in% c("2020", "2021"))
+
+ordered_times <- c()
+
+for(i in 1:nrow(unemployment_rates)){
+  year <- as.numeric(unemployment_rates[i, "year"])
+  month_id <- unemployment_rates[i, "period"]
+  month_num <- match(month_id, c("M01","M02","M03","M04","M05","M06","M07","M08","M09","M10","M11","M12"))
+  ordered_times <- c(ordered_times, month_num + 12*(year - 2020 ))
+}
+```
+
+```{r, echo = FALSE}
+daily_reports_folder <- 
+"/Users/leoulberhanu/Downloads/Covid_Project 4/COVID-19-master_March12/csse_covid_19_data/csse_covid_19_daily_reports_us"
+
+avg_for_day <- function(day_fname){
+  path <- paste(daily_reports_folder, day_fname, sep="/")
+  day_df <- read.csv(path, header = TRUE) %>% filter(!is.na(Incident_Rate))
+  return(mean(pull(day_df, Incident_Rate)))
+}
+
+months_patterns <- list("^01-\\d+-2020.csv", "^02-\\d+-2020.csv", "^03-\\d+-2020.csv", "^04-\\d+-2020.csv", "^05-\\d+-2020.csv", "^06-\\d+-2020.csv", "^07-\\d+-2020.csv", "^08-\\d+-2020.csv", "^09-\\d+-2020.csv", "^10-\\d+-2020.csv"
+                        ,"^11-\\d+-2020.csv", "^12-\\d+-2020.csv", "^01-\\d+-2021.csv", "^02-\\d+-2021.csv", "^03-\\d+-2021.csv", "^04-\\d+-2021.csv", "^05-\\d+-2021.csv", "^06-\\d+-2021.csv", "^07-\\d+-2021.csv")
+
+months_files <- lapply(months_patterns, function(pat) {
+          return(list.files(path = daily_reports_folder, pattern = pat))
+      })
+
+month_avgs <- lapply(months_files, function(file_list)
+                                    {
+                                          if(length(file_list) == 0){
+                                              return(0)
+                                          }
+                                          return(mean(unlist(lapply(unlist(file_list), avg_for_day))))
+                                    }
+  )
+
+month_avgs <- unlist(month_avgs)
+```
+
+
+```{r, echo = FALSE}
+x <- c()
+y <- c()
+
+unemployment_rates_vec <- pull(unemployment_rates, value)
+
+for(i in 1:length(unemployment_rates_vec)){
+  if(month_avgs[i] > 0){
+    x <- c(x, month_avgs[i])
+    y <- c(y, unemployment_rates_vec[i])
+  }
+}
+```
+
+```{r, echo = FALSE, results = 'hide'}
+d <- c()
+
+unemployment_rates_vec <- pull(unemployment_rates, value)
+unemployment_rates_vec
+
+
+for(i in 1:length(unemployment_rates_vec)){
+  if(month_avgs[i] > 0){
+    d <- c(d, month_avgs[i])
+  }
+}
+x <- c(1:12)
+
+```
+
+
+
+ Here you will find the construction of our linear regression. We found values of Sxy, Sxx, b hat and alpha from our data set and then graphed the points along with a line of best fit. Along with the regression, we constructed a plot of the residuals.
+```{r, echo = FALSE}
+#This portion calculates linreg
+Sxy = sum((d-mean(d))*(x-mean(x)))
+Sxx = sum((x-mean(x))^2)
+b_hat = Sxy/Sxx
+alpha = mean(d) - b_hat*mean(x)
+#b_hat
+#alpha
+
+plot(d)
+abline(a = alpha, b = b_hat)
+```
+```{r, echo = FALSE}
+y_hat = x*b_hat + alpha
+resid = d - y_hat
+plot(resid)
+```
+The fact that the residual plot has such a clear pattern is a bit concerning, because it implies that the data is not well suited to a linear relationship. We can further analyze our regression with a hypothesis test on the slope parameter.
+```{r, echo = FALSE}
+#Hypothesis test on b_hat
+S2 = (sum(d^2) - alpha*sum(d) - b_hat*sum(x*d))/(12-2)
+S_b = sqrt(S2/Sxx)
+w = qt(0.975, 10) * S_b
+upper = b_hat + w
+lower = b_hat - w
+lower
+upper
+```
+This 95 percent confidence interval for the B parameter is bounded at 608.21 to 963.24. Also, our estimated b_hat is included in this range, which is a promising result. Next, we can check how well the change in x reflects in the change in y in our linear regression
+```{r, echo = FALSE}
+#This portion calculates r and r squared
+y_hat = x*b_hat + alpha
+SSE = sum((d-y_hat)^2)
+SST = sum((y_hat - mean(d))^2)
+r2 = 1- (SSE/SST)
+r2
+```
+The r squared value is around 0.9, which is a relatively good r squared value, meaning that the linear regression fit this data decently. However, it is clear that the regression wouldn't be very good at predicting future values.
+
+
+We now transition to our second test, which is a hypothesis test (T-test) that sees how unemployment rates are represented by education level. Our Null Hypothesis was covid did not affect different groups differently, so the difference in the gap should be 0. In addition, there are graphs to represent the data.
+```{r, echo = FALSE}
+
+get_unemployment_over_time <- function(sid){
+  unemployment_rates <- unemployment_data %>% filter(series_id == sid)  %>%
+   filter(year %in% c("2018", "2019","2020", "2021"))  
+  
+  ordered_times <- c()
+  
+  for(i in 1:nrow(unemployment_rates)){
+    year <- as.numeric(unemployment_rates[i, "year"])
+    month_id <- unemployment_rates[i, "period"]
+    month_num <- match(month_id, c("M01","M02","M03","M04","M05","M06","M07","M08","M09","M10","M11","M12"))
+    ordered_times <- c(ordered_times, month_num + 12*(year - 2018 ))
+  }
+  return(list(ordered_times, pull(unemployment_rates, value))) 
+}
+
+#LNS14027659      	40	M	(Seas) Unemployment Rate - Less than a High School Diploma
+#LNS14027660      	40	M	(Seas) Unemployment Rate - High School Graduates
+#LNS14027662      	40	M	(Seas) Unemployment Rate - Bachelor's degree and higher
+#LNS14027689      	40	M	(Seas) Unemployment Rate - Some College or Associate Degree
+
+
+sids <- c("LNS14027659      " , "LNS14027660      ", "LNS14027662      ", "LNS14027689      ")
+colors <- c("red", "blue", "green", "yellow")
+
+for(i in 1:length(sids)){
+    data <- get_unemployment_over_time(sids[i])
+    if(i == 1){
+      plot(unlist(data[2]), ylim = c(0, 25), type="o", main="Unemployment by month since 2018 - by education level",
+        xlab="Month", ylab="Rate", col = colors[i])    
+    }else{
+      lines(unlist(data[2]), type = "o", col = colors[i])
+    }
+}
+```
+Here is a simple plot of unemployment by month since 2016.
+```{r, echo = FALSE}
+two_mean_deg_free_no_rounding <- function(sd1, sd2, s1, s2){
+  se1 <- sd1/sqrt(s1)
+  se2 <- sd2/sqrt(s2)
+  num <- ((se1**2) + (se2**2))**2
+  den <- ((se1**4)/(s1-1)) + ((se2**4)/(s2-1))
+  return(num/den)
+}
+```
+
+```{r, echo = FALSE}
+
+
+#pandemic month start
+cms <- 24
+
+hd <- get_unemployment_over_time("LNS14027660      ")
+bd <- get_unemployment_over_time("LNS14027662      ")
+
+
+hd_rates_pre <- hd[[2]][1:cms]
+hd_rates_post <- hd[[2]][(cms+1):length(hd[[2]])]
+
+bd_rates_pre <- bd[[2]][1:cms]
+bd_rates_post <- bd[[2]][(cms+1):length(bd[[2]])]
+
+diffs_pre <- hd_rates_pre - bd_rates_pre
+diffs_post <- hd_rates_post - bd_rates_post
+
+diffs_pre_ssd <- sd(diffs_pre)
+diffs_post_ssd <- sd(diffs_post)
+
+degf <- round(two_mean_deg_free_no_rounding(diffs_pre_ssd, diffs_post_ssd, length(diffs_pre), length(diffs_post)))
+
+ttest_denom = sqrt(   ((diffs_pre_ssd**2)/length(diffs_pre_ssd))    + ((diffs_post_ssd**2)/length(diffs_post_ssd))   )
+
+#H_o: covid did not affect different groups differently, so the difference in the gap should be 0
+
+tv <- (mean(diffs_pre) - mean(diffs_post))/ttest_denom
+
+2*pt(abs(tv), lower.tail = FALSE, df=degf)
+
+# Fail to reject: the null
+
+```
+With a P value of 0.28, we fail to reject the null hypothesis that unemployment is not affected by education level. This failure indicates that there is not significant evidence to support the claim that unemployment levels are different among different education groups.
+```{r, echo = FALSE}
+plot(hd[[2]] - bd[[2]], ylim = c(0, 25), type="o", main="Unemployment by month since 2020 - by education level",
+        xlab="Month", ylab="Rate", col = "blue")    
+```
+In conclusion, our linear regression estimated the b value very nicely, and did a great job at aligning y to x values with an R^2 of 0.9, but do to the poor residual plot it is safe to say that the model wouldn't do a good job at predicting future values. This makes sense because the spike in unemployment is very hard to explain without context, which ruins the linearity of it. In regards to our hypothesis test, the findings show that different education groups recieved the same treatment in terms of unemployment. This finding may be seen as odd since high school jobs are a lot less secure than jobs that require a bachelors, but due to the large scale of people who have a bachelors but work an average job, the findings do make some sense.
+
+For future work, this project opened a lot of doors as to what we could study in the future. One thing our group was thinking of looking at was comparing unmployment rates during other pandemics, and seeing what results that would yield. If we had more tools in our arsenal, we would have tried to see if unemployment would have fit an exponential model, since the rise was so quick and extreme.
